@@ -7,12 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Camera, Mic, ArrowLeft, Check } from "lucide-react"
-import { detectFoodInImage, DetectedFood } from '@/lib/vision-api'
+import { analyzeImageWithGemini, GeminiDetectedFood } from '@/lib/gemini-api'
 import { useFoodInventory } from "@/context/FoodInventoryContext"
 
-interface DetectedFoodItem extends DetectedFood {
+interface DetectedFoodItem extends GeminiDetectedFood {
   selected: boolean;
 }
+
+type NutritionInfo = {
+  protein: number;
+  iron: number;
+  vitaminC: number;
+  calories: number;
+};
 
 export default function ScanPage() {
   const [scanComplete, setScanComplete] = useState(false)
@@ -26,7 +33,7 @@ export default function ScanPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const router = useRouter()
-  const { addFood } = useFoodInventory()
+  const { addItem } = useFoodInventory()
 
   const startCamera = async () => {
     try {
@@ -57,7 +64,7 @@ export default function ScanPage() {
   const processImage = async (imageData: string) => {
     setIsScanning(true);
     try {
-      const detected = await detectFoodInImage(imageData);
+      const detected = await analyzeImageWithGemini(imageData);
       const itemsWithSelection = detected.map(item => ({
         ...item,
         selected: true
@@ -111,32 +118,76 @@ export default function ScanPage() {
     setTextInput("")
   }
 
-  const handleAddToInventory = () => {
-    detectedItems.forEach(item => {
-      if (item.selected) {
-        addFood({ 
-          id: crypto.randomUUID(), // unique id
-          name: item.name, 
-          confidence: item.confidence, 
-          category: item.category 
+  const handleAddToInventory = async () => {
+    const selectedItems = detectedItems.filter(item => item.selected);
+    
+    for (const item of selectedItems) {
+      try {
+        // Convert Gemini nutrition values to our format
+        const nutrition: NutritionInfo = {
+          protein: item.nutritionalValues.protein,
+          iron: 0, // Not provided by Gemini, using default
+          vitaminC: 0, // Not provided by Gemini, using default
+          calories: item.nutritionalValues.calories
+        };
+
+        const expiryDate = item.expiryDate ? new Date(item.expiryDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Default to 7 days if not provided
+        
+        // First, add to MongoDB
+        const response = await fetch('/api/foods', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: item.name,
+            category: item.category,
+            expiryDate,
+            nutrition,
+            quantity: 1,
+            servingSize: 100, // default serving size in grams
+          }),
         });
+
+        if (!response.ok) {
+          throw new Error('Failed to add item to database');
+        }
+
+        // Then update local state through context
+        addItem({
+          id: crypto.randomUUID(),
+          name: item.name,
+          quantity: 1,
+          expiryDate,
+          servingSize: 100,
+          nutrition,
+        });
+      } catch (error) {
+        console.error('Error adding item:', error);
       }
-    });
-    router.push("/inventory")
-  }
+    }
+    router.push("/inventory");
+  };
 
   const handleTextInput = () => {
     const items = textInput.split(',').map(item => item.trim());
     items.forEach(item => {
-      addFood({ 
-        id: crypto.randomUUID(), // unique id
-        name: item, 
-        confidence: 1, 
-        category: "manual" 
+      addItem({
+        id: crypto.randomUUID(),
+        name: item,
+        quantity: 1,
+        expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default to 7 days
+        servingSize: 100,
+        nutrition: {
+          protein: 0,
+          iron: 0,
+          vitaminC: 0,
+          calories: 0
+        }
       });
     });
-    router.push("/inventory")
-  }
+    router.push("/inventory");
+  };
 
   const renderCameraView = () => (
     <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
@@ -175,16 +226,22 @@ export default function ScanPage() {
             }`}
             onClick={() => toggleItemSelection(index)}
           >
-            <div>
+            <div className="flex-1">
               <p className="font-medium">{item.name}</p>
               <p className="text-sm text-gray-500">
-                Confidence: {Math.round(item.confidence * 100)}%
+                Category: {item.category}
               </p>
-              {item.category && (
-                <p className="text-xs text-gray-400">
-                  Category: {item.category}
+              {item.expiryDate && (
+                <p className="text-sm text-gray-500">
+                  Expires: {item.expiryDate}
                 </p>
               )}
+              <div className="text-xs text-gray-400 mt-1">
+                <p>Calories: {item.nutritionalValues.calories}/100g</p>
+                <p>Protein: {item.nutritionalValues.protein}g</p>
+                <p>Carbs: {item.nutritionalValues.carbs}g</p>
+                <p>Fats: {item.nutritionalValues.fats}g</p>
+              </div>
             </div>
             <input
               type="checkbox"

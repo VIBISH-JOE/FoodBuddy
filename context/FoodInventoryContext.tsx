@@ -79,19 +79,38 @@ export const FoodInventoryContext = createContext<FoodInventoryContextType>({
 
 export function FoodInventoryProvider({ children }: { children: React.ReactNode }) {
   const [inventory, setInventory] = useState<FoodItem[]>([]);
-  
-  const addItem = (item: FoodItem) => {
-    setInventory(prev => [...prev, item]);
+
+  const addItem = async (item: FoodItem) => {
+    const res = await fetch("/api/foods", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item),
+    });
+    if (res.ok) {
+      setInventory(prev => [...prev, item]);
+    }
   };
 
-  const removeItem = (id: string) => {
-    setInventory(prev => prev.filter((item) => item.id !== id));
+  const removeItem = async (id: string) => {
+    const res = await fetch(`/api/foods/${id}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      setInventory(prev => prev.filter((item) => item.id !== id));
+    }
   };
 
-  const updateItem = (id: string, updatedItem: FoodItem) => {
-    setInventory(prev =>
-      prev.map((item) => (item.id === id ? updatedItem : item))
-    );
+  const updateItem = async (id: string, updatedItem: FoodItem) => {
+    const res = await fetch(`/api/foods/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedItem),
+    });
+    if (res.ok) {
+      setInventory(prev =>
+        prev.map((item) => (item.id === id ? updatedItem : item))
+      );
+    }
   };
 
   const getNutrientTotals = (): NutrientTotals => {
@@ -99,8 +118,7 @@ export function FoodInventoryProvider({ children }: { children: React.ReactNode 
       const nutrition = NUTRITION_DATABASE[item.name];
       if (!nutrition) return acc;
 
-      // Calculate nutrients based on serving size and quantity
-      const multiplier = (item.servingSize * item.quantity) / 100; // Convert to 100g basis
+      const multiplier = (item.servingSize * item.quantity) / 100;
       return {
         protein: acc.protein + (nutrition.protein * multiplier),
         iron: acc.iron + (nutrition.iron * multiplier),
@@ -122,35 +140,11 @@ export function FoodInventoryProvider({ children }: { children: React.ReactNode 
     };
   };
 
-  // Initialize with example data
   useEffect(() => {
-    const initialInventory: FoodItem[] = [
-      {
-        id: "1",
-        name: "Milk",
-        quantity: 1,
-        servingSize: 250, // 250g (about 1 cup)
-        expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        nutrition: NUTRITION_DATABASE["Milk"],
-      },
-      {
-        id: "2",
-        name: "Spinach",
-        quantity: 1,
-        servingSize: 100, // 100g
-        expiryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-        nutrition: NUTRITION_DATABASE["Spinach"],
-      },
-      {
-        id: "3",
-        name: "Chicken Breast",
-        quantity: 2,
-        servingSize: 150, // 150g per serving
-        expiryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-        nutrition: NUTRITION_DATABASE["Chicken Breast"],
-      },
-    ];
-    setInventory(initialInventory);
+    fetch("/api/foods")
+      .then(res => res.json())
+      .then(data => setInventory(data))
+      .catch(err => console.error(err));
   }, []);
 
   return (
