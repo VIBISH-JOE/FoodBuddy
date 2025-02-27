@@ -228,20 +228,11 @@ export default function ScanPage() {
           >
             <div className="flex-1">
               <p className="font-medium">{item.name}</p>
-              <p className="text-sm text-gray-500">
-                Category: {item.category}
-              </p>
               {item.expiryDate && (
                 <p className="text-sm text-gray-500">
-                  Expires: {item.expiryDate}
+                  Expires: {new Date(item.expiryDate).toLocaleDateString()}
                 </p>
               )}
-              <div className="text-xs text-gray-400 mt-1">
-                <p>Calories: {item.nutritionalValues.calories}/100g</p>
-                <p>Protein: {item.nutritionalValues.protein}g</p>
-                <p>Carbs: {item.nutritionalValues.carbs}g</p>
-                <p>Fats: {item.nutritionalValues.fats}g</p>
-              </div>
             </div>
             <input
               type="checkbox"

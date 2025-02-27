@@ -1,17 +1,97 @@
 "use client"
 
-import { useContext } from "react"
-import { FoodInventoryContext } from "@/context/FoodInventoryContext"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { ArrowLeft } from "lucide-react"
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Button } from "@/components/ui/button"
-import Link from "next/link"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ArrowLeft } from "lucide-react"
+import { FoodItem } from '../api/foods/route'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts'
 
-export default function Stats() {
-  const { getNutrientTotals, inventory } = useContext(FoodInventoryContext)
-  const nutrients = getNutrientTotals()
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+
+export default function StatsPage() {
+  const [inventory, setInventory] = useState<FoodItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchInventory();
+  }, []);
+
+  const fetchInventory = async () => {
+    try {
+      const response = await fetch('/api/foods');
+      if (!response.ok) throw new Error('Failed to fetch inventory');
+      const data = await response.json();
+      setInventory(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load inventory');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateNutritionalTotals = () => {
+    return inventory.reduce((acc, item) => ({
+      calories: acc.calories + (item.nutritionalValues.calories * item.quantity),
+      protein: acc.protein + (item.nutritionalValues.protein * item.quantity),
+      carbs: acc.carbs + (item.nutritionalValues.carbs * item.quantity),
+      fats: acc.fats + (item.nutritionalValues.fats * item.quantity),
+    }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
+  };
+
+  const getCategoryDistribution = () => {
+    const distribution = inventory.reduce((acc, item) => {
+      acc[item.category] = (acc[item.category] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return Object.entries(distribution).map(([name, value]) => ({
+      name,
+      value
+    }));
+  };
+
+  const getExpiryDistribution = () => {
+    const now = new Date();
+    const distribution = inventory.reduce((acc, item) => {
+      const daysUntilExpiry = Math.ceil(
+        (new Date(item.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      if (daysUntilExpiry <= 0) acc['Expired'] = (acc['Expired'] || 0) + 1;
+      else if (daysUntilExpiry <= 3) acc['Within 3 days'] = (acc['Within 3 days'] || 0) + 1;
+      else if (daysUntilExpiry <= 7) acc['Within week'] = (acc['Within week'] || 0) + 1;
+      else if (daysUntilExpiry <= 30) acc['Within month'] = (acc['Within month'] || 0) + 1;
+      else acc['Later'] = (acc['Later'] || 0) + 1;
+      
+      return acc;
+    }, {} as Record<string, number>);
+
+    return Object.entries(distribution).map(([name, value]) => ({
+      name,
+      value
+    }));
+  };
+
+  if (loading) return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+  if (error) return <div className="text-red-500 text-center">{error}</div>;
+
+  const nutritionalTotals = calculateNutritionalTotals();
+  const categoryData = getCategoryDistribution();
+  const expiryData = getExpiryDistribution();
 
   return (
     <div className="container max-w-4xl mx-auto px-4 py-8">
@@ -25,85 +105,82 @@ export default function Stats() {
       </div>
 
       <div className="grid gap-6">
+        {/* Nutritional Overview */}
         <Card>
           <CardHeader>
             <CardTitle>Nutritional Overview</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {Object.entries(nutrients).map(([nutrient, info]) => (
-              <div key={nutrient} className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="font-medium capitalize">{nutrient}</h3>
-                    <p className="text-sm text-gray-500">
-                      {info.current}{info.unit} of {info.recommended}{info.unit} recommended daily
-                    </p>
-                  </div>
-                  <Badge variant={info.current >= info.recommended ? "default" : "secondary"}>
-                    {Math.round((info.current / info.recommended) * 100)}%
-                  </Badge>
-                </div>
-                <Progress 
-                  value={(info.current / info.recommended) * 100} 
-                  className="h-2" 
-                />
-              </div>
-            ))}
+          <CardContent>
+            <BarChart width={600} height={300} data={[
+              { name: 'Calories (kcal)', value: nutritionalTotals.calories },
+              { name: 'Protein (g)', value: nutritionalTotals.protein },
+              { name: 'Carbs (g)', value: nutritionalTotals.carbs },
+              { name: 'Fats (g)', value: nutritionalTotals.fats },
+            ]}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="value" fill="#8884d8" />
+            </BarChart>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Current Inventory</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              {inventory.map((item) => (
-                <div key={item.id} className="flex justify-between items-center p-3 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium">{item.name}</h4>
-                    <p className="text-sm text-gray-500">
-                      {item.quantity} × {item.servingSize}g serving{item.quantity > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">
-                      Expires: {new Date(item.expiryDate).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-z
-        <Card>
-          <CardHeader>
-            <CardTitle>Nutritional Recommendations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {Object.entries(nutrients).map(([nutrient, info]) => {
-                if (info.current < info.recommended * 0.7) {
-                  return (
-                    <div key={nutrient} className="flex items-start gap-4">
-                      <Badge variant="secondary" className="mt-0.5">Low</Badge>
-                      <div>
-                        <h4 className="font-medium capitalize">{nutrient}</h4>
-                        <p className="text-sm text-gray-500">
-                          Consider adding more {nutrient}-rich foods to your inventory.
-                          You're currently at {Math.round((info.current / info.recommended) * 100)}% of your daily recommended intake.
-                        </p>
-                      </div>
-                    </div>
-                  )
-                }
-                return null
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Category Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Category Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PieChart width={300} height={300}>
+                <Pie
+                  data={categoryData}
+                  cx={150}
+                  cy={150}
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {categoryData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </CardContent>
+          </Card>
+
+          {/* Expiry Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Expiry Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PieChart width={300} height={300}>
+                <Pie
+                  data={expiryData}
+                  cx={150}
+                  cy={150}
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {expiryData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
-  )
+  );
 }

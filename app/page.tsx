@@ -121,7 +121,14 @@ export default function Home() {
                   </Link>
                   <Link href="/inventory">
                     <Button variant="outline" className="w-full">
+                      <ShoppingBag className="mr-2 h-4 w-4" />
                       View Inventory
+                    </Button>
+                  </Link>
+                  <Link href="/stats">
+                    <Button variant="outline" className="w-full">
+                      <BarChart className="mr-2 h-4 w-4" />
+                      View Stats
                     </Button>
                   </Link>
                 </div>
